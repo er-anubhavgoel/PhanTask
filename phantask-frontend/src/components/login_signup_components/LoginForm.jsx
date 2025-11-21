@@ -17,7 +17,7 @@ const LoginForm = () => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    // Placeholder for submit logic
+    sessionStorage.setItem("authToken", "open");
     console.log("Submitted data:", formData);
   };
 
