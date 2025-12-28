@@ -1,7 +1,10 @@
-import { Scanner } from "@yudiel/react-qr-scanner";
-import { useState } from "react";
+import { Html5QrcodeScanner } from "html5-qrcode";
+import { useEffect, useState } from "react";
+import { ATTENDANCE_UI } from "../constants/attendanceUiMessages";
+import LoadingSkeleton from "../components/LoadingSkeleton";
 
-export default function ManageAttendance() {
+/* -------- MAIN COMPONENT -------- */
+const ManageAttendance = () => {
   /* =======================
      SCANNER STATE
      ======================= */
@@ -19,40 +22,72 @@ export default function ManageAttendance() {
   const [downloadError, setDownloadError] = useState("");
 
   /* =======================
-     QR SCANNER LOGIC - OPTIMIZED
+     DESKTOP CHECK
      ======================= */
-  const handleScan = (result) => {
-    if (!result || result.length === 0 || !isScanning) return;
+  const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 990);
 
-    const decodedText = result[0].rawValue;
+  useEffect(() => {
+    const handleResize = () => setIsDesktop(window.innerWidth >= 990);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
-    // Prevent duplicate scans
-    if (decodedText === scannedToken) return;
+  /* =======================
+     QR SCANNER LOGIC
+     ======================= */
+  useEffect(() => {
+    if (!isDesktop) return;
 
-    // Stop scanning immediately after successful read
-    setIsScanning(false);
-    setScannedToken(decodedText);
+    const scanner = new Html5QrcodeScanner(
+      "qr-scanner",
+      {
+        fps: 10,
+        qrbox: { width: 220, height: 220 },
+        rememberLastUsedCamera: true,
+        showImageScan: false,
+      },
+      false
+    );
 
-    // Display the scanned token
-    setMessage(`Scanned Token: ${decodedText.substring(0, 20)}...`);
-    setState("SUCCESS");
+    scanner.render(
+      async (decodedText) => {
+        try {
+          const res = await fetch("/api/attendance/mark", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${sessionStorage.getItem("authToken")}`,
+            },
+            body: JSON.stringify({ token: decodedText }),
+          });
 
-    // Here you would normally call your API
-    console.log("Scanned:", decodedText);
-  };
+          if (!res.ok) {
+            if (res.status === 410) throw new Error("EXPIRED");
+            throw new Error("INVALID");
+          }
 
-  const handleError = (error) => {
-    console.error("Scanner error:", error);
-    setMessage("Scanner error. Please check camera permissions.");
-    setState("ERROR");
-  };
+          const data = await res.json();
 
-  const resetScanner = () => {
-    setIsScanning(true);
-    setScannedToken("");
-    setMessage("");
-    setState("");
-  };
+          setState(data.state);
+          setMessage(
+            ATTENDANCE_UI[data.state]?.text || "Attendance updated"
+          );
+
+          scanner.clear(); // stop after success
+        } catch (e) {
+          setState("");
+          setMessage(
+            e.message === "EXPIRED"
+              ? "QR expired. Ask user to regenerate QR."
+              : "Invalid QR. Please scan again."
+          );
+        }
+      },
+      () => {}
+    );
+
+    return () => scanner.clear();
+  }, [isDesktop]);
 
   /* =======================
      TIMESHEET DOWNLOAD
@@ -68,133 +103,142 @@ export default function ManageAttendance() {
     console.log("Downloading timesheet:", {
       startDate,
       endDate,
-      userId: userId || "all users",
-    });
+      ...(userId && { userId }),
+    };
 
-    setDownloadError("");
-    alert(`Would download timesheet from ${startDate} to ${endDate}`);
+    try {
+      const res = await fetch(
+        "/api/admin/attendance/percentage/download",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${sessionStorage.getItem("authToken")}`,
+          },
+          body: JSON.stringify(body),
+        }
+      );
+
+      if (!res.ok) throw new Error();
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `attendance_${startDate}_to_${endDate}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      window.URL.revokeObjectURL(url);
+    } catch {
+      setDownloadError("Unable to download timesheet");
+    }
   };
+
+  /* =======================
+     DESKTOP ONLY MESSAGE
+     ======================= */
+  if (!isDesktop) {
+    return (
+      <div className="flex items-center justify-center h-screen p-4">
+        <div className="text-center bg-white p-8 rounded-xl shadow-lg border border-gray-200">
+          <h1 className="text-2xl font-bold mb-4 text-amber-950">
+            Desktop Access Required
+          </h1>
+          <p className="text-gray-700">
+            Manage Attendance is available only on screens wider than{" "}
+            <span className="font-semibold">990px</span>.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   /* =======================
      UI
      ======================= */
   return (
-    <div className="p-5">
-      <h3 className="text-2xl font-bold mb-6 text-gray-800">
-        Manage Attendance (Admin)
-      </h3>
+    <div className="space-y-6 p-4">
+      {/* PAGE HEADER */}
+      <div className="mb-3 bg-white/60 rounded-xl p-4 shadow-sm border border-gray-100">
+        <h1 className="text-2xl md:text-3xl font-bold text-center text-amber-950">
+          Manage Attendance and Timesheet
+        </h1>
+      </div>
 
-      {/* ===== QR SCANNER ===== */}
-      <section className="mb-8 p-5 bg-white rounded-lg shadow-md">
-        <h4 className="text-xl font-semibold mb-4 text-gray-700">
-          📷 Scan Attendance QR
-        </h4>
+      {/* ===== SCANNER CARD ===== */}
+      <div className="bg-white/80 rounded-xl shadow-md border border-gray-200 p-6">
+        <h2 className="text-lg font-bold text-gray-800 mb-4">
+          Scan Attendance QR
+        </h2>
 
-        <div className="flex flex-col items-center">
-          {isScanning ? (
-            <div className="w-80 max-w-full border-4 border-gray-300 rounded-lg overflow-hidden">
-              <Scanner
-                onScan={handleScan}
-                onError={handleError}
-                // PERFORMANCE OPTIMIZATIONS
-                components={{
-                  audio: false, // Disable audio feedback
-                  finder: true, // Show finder box for better targeting
-                }}
-                constraints={{
-                  facingMode: "environment", // Use back camera
-                  aspectRatio: 1, // Square aspect ratio for better QR detection
-                }}
-                formats={[
-                  // Only scan QR codes, not all barcode formats
-                  "qr_code"
-                ]}
-                styles={{
-                  container: { width: "100%" },
-                  video: { width: "100%" }
-                }}
-                // Additional performance settings
-                scanDelay={100} // Scan every 100ms (faster than default)
-                allowMultiple={false} // Only detect one code at a time
-              />
-            </div>
-          ) : (
-            <div className="w-80 h-80 flex items-center justify-center bg-gray-100 rounded-lg border-4 border-gray-300">
-              <p className="text-gray-500 text-center px-4">
-                Scanner paused. Click "Scan Again" to continue.
-              </p>
-            </div>
-          )}
+        <div className="flex gap-6 items-start">
+          <div id="qr-scanner" />
 
           {message && (
             <div
-              className={`mt-4 p-3 rounded-lg font-semibold text-center max-w-md ${state === "SUCCESS"
-                  ? "bg-green-100 text-green-700"
-                  : state === "ERROR"
-                    ? "bg-red-100 text-red-700"
-                    : "bg-gray-100 text-gray-700"
+              className={`px-4 py-3 rounded-lg font-semibold
+                ${
+                  state === "COMPLETED"
+                    ? "bg-green-100 text-green-700"
+                    : state === "CHECKED_IN"
+                    ? "bg-yellow-100 text-yellow-700"
+                    : "bg-red-100 text-red-700"
                 }`}
             >
               {message}
             </div>
           )}
-
-          {scannedToken && (
-            <div className="mt-4 w-80 max-w-full">
-              <button
-                onClick={resetScanner}
-                className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-colors"
-              >
-                Scan Again
-              </button>
-            </div>
-          )}
         </div>
-      </section>
+      </div>
 
-      <hr className="my-8 border-gray-300" />
+      {/* ===== TIMESHEET CARD ===== */}
+      <div className="bg-white/80 rounded-xl shadow-md border border-amber-300 p-6">
+        <h2 className="text-lg font-bold text-amber-800 mb-4">
+          Download Attendance Timesheet
+        </h2>
 
-      {/* ===== TIMESHEET DOWNLOAD ===== */}
-      <section className="p-5 bg-white rounded-lg shadow-md">
-        <h4 className="text-xl font-semibold mb-4 text-gray-700">
-          ⬇️ Download Attendance Timesheet
-        </h4>
-
-        <div className="flex flex-wrap gap-3 mb-4">
+        <div className="flex flex-wrap gap-3 items-center">
           <input
             type="date"
-            value={startDate}
+            className="border rounded-lg px-3 py-2 text-sm"
             onChange={(e) => setStartDate(e.target.value)}
             className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="Start Date"
           />
           <input
             type="date"
-            value={endDate}
+            className="border rounded-lg px-3 py-2 text-sm"
             onChange={(e) => setEndDate(e.target.value)}
             className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="End Date"
           />
           <input
-            type="text"
-            value={userId}
+            placeholder="User ID (optional)"
+            className="border rounded-lg px-3 py-2 text-sm"
             onChange={(e) => setUserId(e.target.value)}
             placeholder="User ID (optional)"
             className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 flex-1 min-w-[200px]"
           />
+
+          <button
+            onClick={downloadTimesheet}
+            className="bg-amber-700 text-white px-4 py-2 rounded-lg hover:bg-amber-800 hover:scale-95 transition-transform text-sm font-semibold"
+          >
+            Download CSV
+          </button>
         </div>
 
-        <button
-          onClick={downloadTimesheet}
-          className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition-colors"
-        >
-          Download CSV
-        </button>
-
         {downloadError && (
-          <p className="mt-3 text-red-600 font-medium">{downloadError}</p>
+          <p className="text-red-600 text-sm mt-3">
+            {downloadError}
+          </p>
         )}
-      </section>
+      </div>
     </div>
   );
-}
+};
+
+export default ManageAttendance;
