@@ -10,6 +10,8 @@ const ManageAttendance = () => {
      ======================= */
   const [message, setMessage] = useState("");
   const [state, setState] = useState("");
+  const [isScanning, setIsScanning] = useState(true);
+  const [scannedToken, setScannedToken] = useState("");
 
   /* =======================
      TIMESHEET STATE
@@ -90,7 +92,7 @@ const ManageAttendance = () => {
   /* =======================
      TIMESHEET DOWNLOAD
      ======================= */
-  const downloadTimesheet = async () => {
+  const downloadTimesheet = () => {
     setDownloadError("");
 
     if (!startDate || !endDate) {
@@ -98,7 +100,7 @@ const ManageAttendance = () => {
       return;
     }
 
-    const body = {
+    console.log("Downloading timesheet:", {
       startDate,
       endDate,
       ...(userId && { userId }),
@@ -203,16 +205,22 @@ const ManageAttendance = () => {
             type="date"
             className="border rounded-lg px-3 py-2 text-sm"
             onChange={(e) => setStartDate(e.target.value)}
+            className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="Start Date"
           />
           <input
             type="date"
             className="border rounded-lg px-3 py-2 text-sm"
             onChange={(e) => setEndDate(e.target.value)}
+            className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="End Date"
           />
           <input
             placeholder="User ID (optional)"
             className="border rounded-lg px-3 py-2 text-sm"
             onChange={(e) => setUserId(e.target.value)}
+            placeholder="User ID (optional)"
+            className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 flex-1 min-w-[200px]"
           />
 
           <button
