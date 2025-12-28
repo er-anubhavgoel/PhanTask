@@ -1,8 +1,10 @@
 import { Html5QrcodeScanner } from "html5-qrcode";
 import { useEffect, useState } from "react";
 import { ATTENDANCE_UI } from "../constants/attendanceUiMessages";
+import LoadingSkeleton from "../components/LoadingSkeleton";
 
-export default function ManageAttendance() {
+/* -------- MAIN COMPONENT -------- */
+const ManageAttendance = () => {
   /* =======================
      SCANNER STATE
      ======================= */
@@ -18,12 +20,30 @@ export default function ManageAttendance() {
   const [downloadError, setDownloadError] = useState("");
 
   /* =======================
+     DESKTOP CHECK
+     ======================= */
+  const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 990);
+
+  useEffect(() => {
+    const handleResize = () => setIsDesktop(window.innerWidth >= 990);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  /* =======================
      QR SCANNER LOGIC
      ======================= */
   useEffect(() => {
+    if (!isDesktop) return;
+
     const scanner = new Html5QrcodeScanner(
       "qr-scanner",
-      { fps: 10, qrbox: 250 },
+      {
+        fps: 10,
+        qrbox: { width: 220, height: 220 },
+        rememberLastUsedCamera: true,
+        showImageScan: false,
+      },
       false
     );
 
@@ -40,35 +60,32 @@ export default function ManageAttendance() {
           });
 
           if (!res.ok) {
-            if (res.status === 410) {
-              throw new Error("EXPIRED");
-            }
+            if (res.status === 410) throw new Error("EXPIRED");
             throw new Error("INVALID");
           }
 
           const data = await res.json();
 
-          // backend-driven UI state
           setState(data.state);
-          setMessage(ATTENDANCE_UI[data.state]?.text || "Attendance updated");
+          setMessage(
+            ATTENDANCE_UI[data.state]?.text || "Attendance updated"
+          );
 
-          // stop scanner after successful scan
-          scanner.clear();
-
+          scanner.clear(); // stop after success
         } catch (e) {
           setState("");
-          if (e.message === "EXPIRED") {
-            setMessage("QR expired. Ask user to regenerate QR.");
-          } else {
-            setMessage("Invalid QR. Please scan again.");
-          }
+          setMessage(
+            e.message === "EXPIRED"
+              ? "QR expired. Ask user to regenerate QR."
+              : "Invalid QR. Please scan again."
+          );
         }
       },
-      () => { }
+      () => {}
     );
 
     return () => scanner.clear();
-  }, []);
+  }, [isDesktop]);
 
   /* =======================
      TIMESHEET DOWNLOAD
@@ -100,9 +117,7 @@ export default function ManageAttendance() {
         }
       );
 
-      if (!res.ok) {
-        throw new Error();
-      }
+      if (!res.ok) throw new Error();
 
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
@@ -121,67 +136,101 @@ export default function ManageAttendance() {
   };
 
   /* =======================
+     DESKTOP ONLY MESSAGE
+     ======================= */
+  if (!isDesktop) {
+    return (
+      <div className="flex items-center justify-center h-screen p-4">
+        <div className="text-center bg-white p-8 rounded-xl shadow-lg border border-gray-200">
+          <h1 className="text-2xl font-bold mb-4 text-amber-950">
+            Desktop Access Required
+          </h1>
+          <p className="text-gray-700">
+            Manage Attendance is available only on screens wider than{" "}
+            <span className="font-semibold">990px</span>.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  /* =======================
      UI
      ======================= */
   return (
-    <div style={{ padding: 20 }}>
-      <h3>Manage Attendance (Admin)</h3>
+    <div className="space-y-6 p-4">
+      {/* PAGE HEADER */}
+      <div className="mb-3 bg-white/60 rounded-xl p-4 shadow-sm border border-gray-100">
+        <h1 className="text-2xl md:text-3xl font-bold text-center text-amber-950">
+          Manage Attendance and Timesheet
+        </h1>
+      </div>
 
-      {/* ===== QR SCANNER ===== */}
-      <section style={{ marginBottom: 30 }}>
-        <h4>Scan Attendance QR</h4>
+      {/* ===== SCANNER CARD ===== */}
+      <div className="bg-white/80 rounded-xl shadow-md border border-gray-200 p-6">
+        <h2 className="text-lg font-bold text-gray-800 mb-4">
+          Scan Attendance QR
+        </h2>
 
-        <div id="qr-scanner" style={{ width: 300 }} />
+        <div className="flex gap-6 items-start">
+          <div id="qr-scanner" />
 
-        {message && (
-          <p
-            style={{
-              marginTop: 10,
-              fontWeight: "bold",
-              color:
-                state === "COMPLETED"
-                  ? "green"
-                  : state === "CHECKED_IN"
-                    ? "orange"
-                    : "red",
-            }}
-          >
-            {message}
-          </p>
-        )}
-      </section>
+          {message && (
+            <div
+              className={`px-4 py-3 rounded-lg font-semibold
+                ${
+                  state === "COMPLETED"
+                    ? "bg-green-100 text-green-700"
+                    : state === "CHECKED_IN"
+                    ? "bg-yellow-100 text-yellow-700"
+                    : "bg-red-100 text-red-700"
+                }`}
+            >
+              {message}
+            </div>
+          )}
+        </div>
+      </div>
 
-      <hr />
+      {/* ===== TIMESHEET CARD ===== */}
+      <div className="bg-white/80 rounded-xl shadow-md border border-amber-300 p-6">
+        <h2 className="text-lg font-bold text-amber-800 mb-4">
+          Download Attendance Timesheet
+        </h2>
 
-      {/* ===== TIMESHEET DOWNLOAD ===== */}
-      <section style={{ marginTop: 30 }}>
-        <h4>⬇️ Download Attendance Timesheet</h4>
-
-        <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
+        <div className="flex flex-wrap gap-3 items-center">
           <input
             type="date"
+            className="border rounded-lg px-3 py-2 text-sm"
             onChange={(e) => setStartDate(e.target.value)}
           />
           <input
             type="date"
+            className="border rounded-lg px-3 py-2 text-sm"
             onChange={(e) => setEndDate(e.target.value)}
           />
           <input
             placeholder="User ID (optional)"
+            className="border rounded-lg px-3 py-2 text-sm"
             onChange={(e) => setUserId(e.target.value)}
           />
+
+          <button
+            onClick={downloadTimesheet}
+            className="bg-amber-700 text-white px-4 py-2 rounded-lg hover:bg-amber-800 hover:scale-95 transition-transform text-sm font-semibold"
+          >
+            Download CSV
+          </button>
         </div>
 
-        <button onClick={downloadTimesheet}>
-          Download CSV
-        </button>
-
         {downloadError && (
-          <p style={{ color: "red", marginTop: 8 }}>
+          <p className="text-red-600 text-sm mt-3">
             {downloadError}
           </p>
         )}
-      </section>
+      </div>
     </div>
   );
-}
+};
+
+export default ManageAttendance;
