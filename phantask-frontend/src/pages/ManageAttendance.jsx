@@ -1,17 +1,14 @@
 import { Html5QrcodeScanner } from "html5-qrcode";
 import { useEffect, useState } from "react";
 import { ATTENDANCE_UI } from "../constants/attendanceUiMessages";
-import LoadingSkeleton from "../components/LoadingSkeleton";
 
-/* -------- MAIN COMPONENT -------- */
 const ManageAttendance = () => {
   /* =======================
      SCANNER STATE
      ======================= */
   const [message, setMessage] = useState("");
   const [state, setState] = useState("");
-  const [isScanning, setIsScanning] = useState(true);
-  const [scannedToken, setScannedToken] = useState("");
+  const [scanLocked, setScanLocked] = useState(false);
 
   /* =======================
      TIMESHEET STATE
@@ -51,6 +48,9 @@ const ManageAttendance = () => {
 
     scanner.render(
       async (decodedText) => {
+        if (scanLocked) return;
+        setScanLocked(true);
+
         try {
           const res = await fetch("/api/attendance/mark", {
             method: "POST",
@@ -73,7 +73,7 @@ const ManageAttendance = () => {
             ATTENDANCE_UI[data.state]?.text || "Attendance updated"
           );
 
-          scanner.clear(); // stop after success
+          scanner.clear();
         } catch (e) {
           setState("");
           setMessage(
@@ -81,18 +81,19 @@ const ManageAttendance = () => {
               ? "QR expired. Ask user to regenerate QR."
               : "Invalid QR. Please scan again."
           );
+          setScanLocked(false);
         }
       },
       () => {}
     );
 
     return () => scanner.clear();
-  }, [isDesktop]);
+  }, [isDesktop, scanLocked]);
 
   /* =======================
      TIMESHEET DOWNLOAD
      ======================= */
-  const downloadTimesheet = () => {
+  const downloadTimesheet = async () => {
     setDownloadError("");
 
     if (!startDate || !endDate) {
@@ -100,7 +101,7 @@ const ManageAttendance = () => {
       return;
     }
 
-    console.log("Downloading timesheet:", {
+    const body = {
       startDate,
       endDate,
       ...(userId && { userId }),
@@ -138,43 +139,21 @@ const ManageAttendance = () => {
   };
 
   /* =======================
-     DESKTOP ONLY MESSAGE
-     ======================= */
-  if (!isDesktop) {
-    return (
-      <div className="flex items-center justify-center h-screen p-4">
-        <div className="text-center bg-white p-8 rounded-xl shadow-lg border border-gray-200">
-          <h1 className="text-2xl font-bold mb-4 text-amber-950">
-            Desktop Access Required
-          </h1>
-          <p className="text-gray-700">
-            Manage Attendance is available only on screens wider than{" "}
-            <span className="font-semibold">990px</span>.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  /* =======================
      UI
      ======================= */
   return (
     <div className="space-y-6 p-4">
-      {/* PAGE HEADER */}
-      <div className="mb-3 bg-white/60 rounded-xl p-4 shadow-sm border border-gray-100">
-        <h1 className="text-2xl md:text-3xl font-bold text-center text-amber-950">
+      <div className="bg-white/60 rounded-xl p-4 shadow-sm border border-gray-100">
+        <h1 className="text-2xl font-bold text-center text-amber-950">
           Manage Attendance and Timesheet
         </h1>
       </div>
 
-      {/* ===== SCANNER CARD ===== */}
-      <div className="bg-white/80 rounded-xl shadow-md border border-gray-200 p-6">
-        <h2 className="text-lg font-bold text-gray-800 mb-4">
-          Scan Attendance QR
-        </h2>
+      {/* Scanner */}
+      <div className="bg-white rounded-xl shadow-md p-6">
+        <h2 className="font-semibold mb-4">Scan Attendance QR</h2>
 
-        <div className="flex gap-6 items-start">
+        <div className="flex gap-6">
           <div id="qr-scanner" />
 
           {message && (
@@ -194,47 +173,37 @@ const ManageAttendance = () => {
         </div>
       </div>
 
-      {/* ===== TIMESHEET CARD ===== */}
-      <div className="bg-white/80 rounded-xl shadow-md border border-amber-300 p-6">
-        <h2 className="text-lg font-bold text-amber-800 mb-4">
-          Download Attendance Timesheet
-        </h2>
+      {/* Timesheet */}
+      <div className="bg-white rounded-xl shadow-md p-6">
+        <h2 className="font-semibold mb-4">Download Timesheet</h2>
 
-        <div className="flex flex-wrap gap-3 items-center">
+        <div className="flex gap-3 flex-wrap">
           <input
             type="date"
-            className="border rounded-lg px-3 py-2 text-sm"
             onChange={(e) => setStartDate(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="Start Date"
+            className="px-4 py-2 border rounded-lg"
           />
           <input
             type="date"
-            className="border rounded-lg px-3 py-2 text-sm"
             onChange={(e) => setEndDate(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="End Date"
+            className="px-4 py-2 border rounded-lg"
           />
           <input
             placeholder="User ID (optional)"
-            className="border rounded-lg px-3 py-2 text-sm"
             onChange={(e) => setUserId(e.target.value)}
-            placeholder="User ID (optional)"
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 flex-1 min-w-[200px]"
+            className="px-4 py-2 border rounded-lg"
           />
 
           <button
             onClick={downloadTimesheet}
-            className="bg-amber-700 text-white px-4 py-2 rounded-lg hover:bg-amber-800 hover:scale-95 transition-transform text-sm font-semibold"
+            className="bg-amber-700 text-white px-4 py-2 rounded-lg hover:bg-amber-800"
           >
             Download CSV
           </button>
         </div>
 
         {downloadError && (
-          <p className="text-red-600 text-sm mt-3">
-            {downloadError}
-          </p>
+          <p className="text-red-600 mt-3">{downloadError}</p>
         )}
       </div>
     </div>
